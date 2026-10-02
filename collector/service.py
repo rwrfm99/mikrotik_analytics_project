@@ -79,23 +79,48 @@ def resolve(ip):
 
 
 def dns_loop():
-    while True:
+    # Resolve up to DNS_WORKERS IPs concurrently to drain the queue faster.
+    workers = max(1, int(os.getenv('DNS_WORKERS', '10')))
+
+    def resolve_one(ip):
+        ptr, status, ttl = resolve(ip)
+        now = time.time()
         try:
-            with connect() as con:
-                row = con.execute('SELECT ip FROM names WHERE due < ? ORDER BY due LIMIT 1', (time.time(),)).fetchone()
-            if not row:
-                time.sleep(2)
-                continue
-            ip = row[0]
-            ptr, status, ttl = resolve(ip)
-            now = time.time()
             insert('dns', [dict(ip=ip, ptr=ptr, status=status,
                                 checked_at=stamp(now)[:19], expires_at=stamp(now+ttl)[:19])])
+        except Exception:
+            return  # will be retried when due expires
+        try:
             with connect() as con:
                 con.execute('UPDATE names SET due=? WHERE ip=?', (now+ttl, ip))
         except Exception:
+            pass
+
+    while True:
+        try:
+            with connect() as con:
+                rows = con.execute(
+                    'SELECT ip FROM names WHERE due < ? ORDER BY due LIMIT ?',
+                    (time.time(), workers)
+                ).fetchall()
+            if not rows:
+                time.sleep(2)
+                continue
+            # Mark all fetched IPs as in-progress (due = far future) before resolving
+            # so concurrent loop iterations don't pick the same IPs.
+            future = time.time() + 3600
+            with connect() as con:
+                con.executemany('UPDATE names SET due=? WHERE ip=?',
+                                [(future, r[0]) for r in rows])
+            threads = [threading.Thread(target=resolve_one, args=(r[0],), daemon=True)
+                       for r in rows]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=10)
+        except Exception:
             time.sleep(5)
-        time.sleep(.2)
+        time.sleep(0.1)
 
 
 class Health(BaseHTTPRequestHandler):

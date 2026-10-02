@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import TrafficPage from './TrafficPage.vue'
+import ReportsPage from './ReportsPage.vue'
 
 const section = ref('sessions')
 
@@ -89,8 +90,9 @@ onUnmounted(() => clearInterval(timer))
     <q-header class="bg-dark"><q-toolbar class="q-px-lg"><q-icon name="router" size="28px" class="q-mr-md" /><q-toolbar-title>MikroTik Analytics</q-toolbar-title><q-badge color="teal" label="Hotspot" /></q-toolbar></q-header>
     <q-page-container>
       <q-page class="q-pa-lg" style="max-width: 1500px; margin: auto">
-        <q-tabs v-model="section" align="left" active-color="teal" class="q-mb-md"><q-tab name="sessions" label="Usuarios y sesiones" /><q-tab name="traffic" label="Tráfico y destinos" /></q-tabs>
+        <q-tabs v-model="section" align="left" active-color="teal" class="q-mb-md"><q-tab name="sessions" label="Usuarios y sesiones" /><q-tab name="traffic" label="Tráfico y destinos" /><q-tab name="reports" label="Reportes" /></q-tabs>
         <TrafficPage v-if="section === 'traffic'" />
+        <ReportsPage v-if="section === 'reports'" />
         <div v-show="section === 'sessions'">
         <div class="text-overline text-teal-8">RECOLECCIÓN · ROUTEROS API</div>
         <h1 class="text-h4 q-mt-sm">Usuarios y sesiones</h1>

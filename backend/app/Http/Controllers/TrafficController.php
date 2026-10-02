@@ -8,6 +8,8 @@ use App\Services\Traffic\TrafficRepository;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use RuntimeException;
 use Throwable;
 
 class TrafficController extends Controller
@@ -22,7 +24,7 @@ class TrafficController extends Controller
     {
         $result = ['clickhouse' => 'error', 'receiver' => null];
         try {
-            $row = $client->query('SELECT count() AS flows, sum(bytes) AS bytes, maxOrNull(received_at) AS last_received, argMax(toInt64(toUnixTimestamp(received_at)) - toInt64(toUnixTimestamp(flow_time)), received_at) AS clock_offset_seconds FROM traffic.flows FINAL')[0];
+            $row = $client->query('SELECT count() AS flows, sum(bytes) AS bytes, maxOrNull(received_at) AS last_received, argMax(toInt64(toUnixTimestamp(received_at)) - toInt64(toUnixTimestamp(flow_time)), received_at) AS clock_offset_seconds FROM traffic.flows')[0];
             $result = ['clickhouse' => 'ok', 'flows' => (int) $row['flows'], 'bytes' => (int) $row['bytes'],
                 'last_received' => $row['last_received'], 'clock_offset_seconds' => (int) $row['clock_offset_seconds'], 'receiver' => null];
         } catch (Throwable) {
@@ -48,8 +50,16 @@ class TrafficController extends Controller
         }
         try {
             return $repository->report($user, $from, $to);
-        } catch (Throwable) {
-            return response()->json(['message' => 'No se pudo consultar el tráfico. Comprueba ClickHouse o reduce el intervalo.'], 503);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 503);
+        } catch (Throwable $e) {
+            Log::error('Traffic report unexpected error', [
+                'user_id' => $user->id,
+                'from' => $from->toIso8601String(),
+                'to' => $to->toIso8601String(),
+                'exception' => $e,
+            ]);
+            return response()->json(['message' => 'Error inesperado al generar el informe de tráfico.'], 503);
         }
     }
 }

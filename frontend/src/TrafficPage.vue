@@ -1,14 +1,15 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
+import { siteLabel } from './siteLabel.js'
 
 const users = ref([]), selected = ref(null), hours = ref(1), report = ref(null), status = ref(null)
 const error = ref(''), loading = ref(false)
-let timer, generation = 0
+let generation = 0
 const mb = n => (Number(n || 0) / 1000000).toFixed(2)
 const date = ms => new Date(Number(ms)).toLocaleString()
 const columns = [
   { name: 'ip', label: 'IP destino', field: 'ip', align: 'left' },
-  { name: 'ptr', label: 'Nombre DNS (PTR)', field: r => r.ptr || ({ pending: 'Pendiente', not_found: 'Sin registro PTR', error: 'No disponible', private: 'IP privada' }[r.dns_status] || '—'), align: 'left' },
+  { name: 'ptr', label: 'Sitio', field: r => siteLabel(r), align: 'left' },
   { name: 'download', label: 'Descarga · MB', field: r => mb(r.download_bytes), align: 'right' },
   { name: 'upload', label: 'Subida · MB', field: r => mb(r.upload_bytes), align: 'right' },
   { name: 'total', label: 'Total · MB', field: r => mb(r.total_bytes), align: 'right' },
@@ -43,9 +44,8 @@ async function refresh() {
 onMounted(async () => {
   try { users.value = await json('/api/v1/traffic/users') } catch { error.value = 'No se pudo cargar la lista de usuarios.' }
   await refresh()
-  timer = setInterval(() => { if (!loading.value) refresh() }, 30000)
 })
-onUnmounted(() => { generation++; clearInterval(timer) })
+onUnmounted(() => { generation++ })
 </script>
 
 <template>

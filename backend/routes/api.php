@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\HotspotController;
+use App\Http\Controllers\ReportController;
 use App\Http\Controllers\TrafficController;
 use Illuminate\Support\Facades\Route;
 
@@ -12,3 +13,5 @@ Route::get('/v1/hotspot/sessions', [HotspotController::class, 'sessions']);
 Route::get('/v1/traffic/users', [TrafficController::class, 'users']);
 Route::get('/v1/traffic/status', [TrafficController::class, 'status']);
 Route::get('/v1/traffic/users/{user}', [TrafficController::class, 'report']);
+Route::get('/v1/reports/users/{user}', [ReportController::class, 'userReport']);
+Route::get('/v1/reports/sites', [ReportController::class, 'sitesReport']);
