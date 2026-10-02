@@ -1,0 +1,20 @@
+<clickhouse>
+  <users>
+    <traffic_reader>
+      <password from_env="CLICKHOUSE_READER_PASSWORD" />
+      <networks><ip>::/0</ip></networks>
+      <profile>traffic_readonly</profile>
+      <quota>default</quota>
+      <allow_databases><database>traffic</database></allow_databases>
+    </traffic_reader>
+  </users>
+  <profiles>
+    <traffic_readonly>
+      <readonly>1</readonly>
+      <max_execution_time>15</max_execution_time>
+      <max_memory_usage>536870912</max_memory_usage>
+      <max_result_rows>10001</max_result_rows>
+      <result_overflow_mode>throw</result_overflow_mode>
+    </traffic_readonly>
+  </profiles>
+</clickhouse>
