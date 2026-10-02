@@ -48,6 +48,25 @@ class ReportController extends Controller
         }
     }
 
+    public function topUsersReport(Request $request, ReportRepository $repository)
+    {
+        $router = Router::where('host', config('mikrotik.host'))->firstOrFail();
+        [$from, $to] = $this->parseInterval($request);
+        try {
+            return $repository->topUsersReport($router->id, $from, $to);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 503);
+        } catch (Throwable $e) {
+            Log::error('Report top-users unexpected error', [
+                'from'      => $from->toIso8601String(),
+                'to'        => $to->toIso8601String(),
+                'exception' => $e,
+            ]);
+
+            return response()->json(['message' => 'Error inesperado al generar el reporte.'], 503);
+        }
+    }
+
     public function sitesReport(Request $request, ReportRepository $repository)
     {
         $router = Router::where('host', config('mikrotik.host'))->firstOrFail();

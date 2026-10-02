@@ -26,6 +26,17 @@ class ReportRepository
     }
 
     // -------------------------------------------------------------------------
+    // Top users by consumed bytes in the interval.
+    // Returns up to 20 users ranked by total bytes, with upload/download split.
+    // -------------------------------------------------------------------------
+    public function topUsersReport(int $routerId, CarbonImmutable $from, CarbonImmutable $to): array
+    {
+        $key = 'report:top_users:'.hash('sha256', $routerId.'|'.$from->timestamp.'|'.$to->timestamp);
+
+        return Cache::remember($key, 30, fn () => $this->buildTopUsersReport($routerId, $from, $to));
+    }
+
+    // -------------------------------------------------------------------------
     // Global sites report: top destinations across all users in the interval,
     // ranked by total bytes. Includes unique user count per destination.
     // -------------------------------------------------------------------------
@@ -34,6 +45,119 @@ class ReportRepository
         $key = 'report:sites:'.hash('sha256', $routerId.'|'.$from->timestamp.'|'.$to->timestamp);
 
         return Cache::remember($key, 30, fn () => $this->buildSitesReport($routerId, $from, $to));
+    }
+
+    private function buildTopUsersReport(int $routerId, CarbonImmutable $from, CarbonImmutable $to): array
+    {
+        // Load all sessions on the router in the interval to build ownership.
+        $sessions = HotspotSession::where('router_id', $routerId)
+            ->where('started_at', '<=', $to)
+            ->where('last_seen_at', '>=', $from->subDay())
+            ->limit(10001)->get();
+        if ($sessions->count() > 10000) {
+            throw new RuntimeException('Demasiadas sesiones; reduce el intervalo.');
+        }
+
+        $unionRows = [];
+        foreach ($sessions as $session) {
+            if (! filter_var($session->ip_address, FILTER_VALIDATE_IP)) {
+                continue;
+            }
+            $upper       = $session->ended_at ?? $session->last_seen_at;
+            $unionRows[] = sprintf(
+                "SELECT toUInt64(%d) AS session_id, '%s' AS ip, toUInt64(%d) AS sess_start, toUInt64(%d) AS sess_end, toUInt64(%d) AS owner_id",
+                $session->id, $session->ip_address,
+                $session->started_at->getTimestampMs(), $upper->getTimestampMs(), $session->hotspot_user_id
+            );
+        }
+
+        if (! $unionRows) {
+            return [
+                'from'        => $from->toIso8601String(),
+                'to'          => $to->toIso8601String(),
+                'total_bytes' => 0,
+                'users'       => [],
+            ];
+        }
+
+        $ownershipValues = implode("\n  UNION ALL ", $unionRows);
+
+        // Query: aggregate exact-confidence flows grouped by owner_id (= hotspot_user_id).
+        $rows = $this->clickhouse->query(<<<SQL
+SELECT
+    sole_owner                             AS user_id,
+    sumIf(flow_bytes, direction = 'download') AS download_bytes,
+    sumIf(flow_bytes, direction = 'upload')   AS upload_bytes,
+    sum(flow_bytes)                            AS total_bytes,
+    count()                                    AS flows
+FROM (
+    SELECT
+        f.bytes     AS flow_bytes,
+        f.direction,
+        countIf(o.owner_id != 0)              AS owner_count,
+        anyIf(o.owner_id,   o.owner_id != 0)  AS sole_owner,
+        anyIf(o.sess_start, o.owner_id != 0)  AS sole_sess_start,
+        anyIf(o.sess_end,   o.owner_id != 0)  AS sole_sess_end,
+        f.time_quality,
+        f.sampling_rate,
+        f.start_ms,
+        f.end_ms
+    FROM traffic.flows AS f
+    LEFT JOIN ({$ownershipValues}) AS o
+        ON  o.ip         = f.client_ip
+        AND o.sess_start <= f.end_ms
+        AND o.sess_end   >= f.start_ms
+    WHERE f.exporter  = {exporter:String}
+      AND f.flow_time >= fromUnixTimestamp({from_seconds:UInt32}) - INTERVAL 1 DAY
+      AND f.flow_time <= fromUnixTimestamp({to_seconds:UInt32})   + INTERVAL 5 MINUTE
+      AND f.end_ms    >= {from_ms:UInt64}
+      AND f.end_ms    <  {to_ms:UInt64}
+    GROUP BY f.start_ms, f.end_ms, f.time_quality, f.direction, f.sampling_rate, f.bytes
+)
+WHERE owner_count = 1
+  AND sole_sess_start <= start_ms
+  AND sole_sess_end   >= end_ms
+  AND time_quality = 'exporter'
+  AND direction   != 'unknown'
+  AND sampling_rate = 1
+  AND sole_owner != 0
+GROUP BY sole_owner
+ORDER BY total_bytes DESC
+LIMIT 20
+SQL, [
+            'exporter'     => config('traffic.exporter'),
+            'from_seconds' => $from->timestamp,
+            'to_seconds'   => $to->timestamp,
+            'from_ms'      => $from->getTimestampMs(),
+            'to_ms'        => $to->getTimestampMs(),
+        ]);
+
+        // Resolve hotspot usernames from MySQL.
+        $userIds   = array_map(fn ($r) => (int) $r['user_id'], $rows);
+        $usernames = HotspotUser::whereIn('id', $userIds)->pluck('username', 'id');
+
+        $users      = [];
+        $grandTotal = 0;
+        foreach ($rows as $row) {
+            $uid         = (int) $row['user_id'];
+            $totalBytes  = (int) $row['total_bytes'];
+            $grandTotal += $totalBytes;
+            $users[]     = [
+                'user_id'        => $uid,
+                'username'       => $usernames[$uid] ?? "id:{$uid}",
+                'download_bytes' => (int) $row['download_bytes'],
+                'upload_bytes'   => (int) $row['upload_bytes'],
+                'total_bytes'    => $totalBytes,
+                'flows'          => (int) $row['flows'],
+            ];
+        }
+
+        return [
+            'from'        => $from->toIso8601String(),
+            'to'          => $to->toIso8601String(),
+            'total_bytes' => $grandTotal,
+            'users'       => $users,
+        ];
     }
 
     // =========================================================================

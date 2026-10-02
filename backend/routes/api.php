@@ -15,3 +15,4 @@ Route::get('/v1/traffic/status', [TrafficController::class, 'status']);
 Route::get('/v1/traffic/users/{user}', [TrafficController::class, 'report']);
 Route::get('/v1/reports/users/{user}', [ReportController::class, 'userReport']);
 Route::get('/v1/reports/sites', [ReportController::class, 'sitesReport']);
+Route::get('/v1/reports/top-users', [ReportController::class, 'topUsersReport']);
