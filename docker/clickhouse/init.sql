@@ -14,4 +14,5 @@ TTL flow_time + INTERVAL 30 DAY DELETE;
 CREATE TABLE IF NOT EXISTS traffic.dns (
  ip String, ptr String, status LowCardinality(String),
  checked_at DateTime('UTC'), expires_at DateTime('UTC')
-) ENGINE = ReplacingMergeTree(checked_at) ORDER BY ip;
+) ENGINE = ReplacingMergeTree(checked_at) ORDER BY ip
+SETTINGS max_suspicious_broken_parts = 1000, min_bytes_for_wide_part = 10485760;
