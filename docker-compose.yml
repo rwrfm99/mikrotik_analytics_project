@@ -82,6 +82,8 @@ services:
 
   postgres:
     image: postgres:17-alpine
+    ports:
+      - '${POSTGRES_BIND:-127.0.0.1}:${POSTGRES_PORT:-5433}:5432'
     environment:
       POSTGRES_DB: ${DB_DATABASE:-mikrotik_analytics}
       POSTGRES_USER: ${DB_USERNAME:-mikrotik}

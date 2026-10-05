@@ -56,6 +56,25 @@ el usuario `www-data` del contenedor (UID 33); por ejemplo, mediante un grupo o 
 
 ## Desarrollo sin Docker
 
+### Puerto de PostgreSQL en Docker
+
+Si la PC ya tiene PostgreSQL en el puerto 5432, configurar en el `.env` de la raíz:
+
+```env
+POSTGRES_BIND=127.0.0.1
+POSTGRES_PORT=5433
+DB_HOST=postgres
+DB_PORT=5432
+```
+
+`POSTGRES_PORT` es el puerto de acceso desde la PC (por ejemplo, para pgAdmin).
+Elegir otro puerto libre si 5433 está ocupado. Los contenedores se conectan a
+`postgres:5432`, por lo que `DB_PORT` se mantiene en 5432. Esta configuración
+usa el PostgreSQL propio del proyecto; el PostgreSQL existente conserva su puerto.
+Aplicar el cambio con `docker compose up -d`. No es necesario borrar volúmenes.
+
+### Ejecución local
+
 Requiere PHP 8.3+, Composer, Node 24, PostgreSQL y Redis. Extensiones PHP:
 `mbstring`, `fileinfo`, `pdo_pgsql`, `redis`, `zip`, `dom`, `xml` y `pdo_sqlite` para pruebas.
 
