@@ -27,6 +27,7 @@ const page        = ref(1)
 const lastPage    = ref(1)
 const total       = ref(0)
 const rows        = ref([])
+const expandedUsers = ref([])
 let   timer
 let   pendingRefresh = false
 
@@ -39,6 +40,15 @@ const duration = v  => {
   const s = Number(v || 0)
   return `${Math.floor(s/3600)}h ${Math.floor(s%3600/60)}m ${s%60}s`
 }
+
+const userColumns = [
+  { name: 'expand', label: '', field: 'id', align: 'left' },
+  { name: 'username', label: 'Usuario', field: 'username', align: 'left' },
+  { name: 'profile', label: 'Perfil', field: r => r.profile || '—', align: 'left' },
+  { name: 'devices', label: 'Dispositivos', field: 'device_count', align: 'right' },
+  { name: 'in', label: '↓ RouterOS', field: r => fmtBytes(r.mikrotik_bytes_in), align: 'right' },
+  { name: 'out', label: '↑ RouterOS', field: r => fmtBytes(r.mikrotik_bytes_out), align: 'right' },
+]
 
 const sessionColumns = [
   { name: 'username',    label: 'Usuario',            field: 'username',                      align: 'left'  },
@@ -70,6 +80,7 @@ async function refresh() {
   try {
     const ep     = curView === 'active' ? 'users/active' : 'sessions'
     const params = new URLSearchParams({ page: curPage, limit: 25, search: curSearch })
+    if (curView === 'active') params.set('group_by', 'user')
     const [col, result] = await Promise.all([
       getJson('/api/v1/hotspot/collection'),
       getJson(`/api/v1/hotspot/${ep}?${params}`),
@@ -263,6 +274,42 @@ onUnmounted(() => clearInterval(timer))
               />
             </q-card-section>
             <q-table
+              v-if="view === 'active'"
+              v-model:expanded="expandedUsers"
+              flat :rows="rows" :columns="userColumns" row-key="id"
+              :loading="loading" :pagination="{ rowsPerPage: 0 }" hide-pagination
+              no-data-label="Sin usuarios activos para esta consulta" class="q-mt-sm"
+            >
+              <template #body="props">
+                <q-tr :props="props">
+                  <q-td auto-width>
+                    <q-btn flat round dense color="teal"
+                      :icon="props.expand ? 'expand_less' : 'expand_more'"
+                      :aria-label="(props.expand ? 'Ocultar' : 'Ver') + ' dispositivos de ' + props.row.username"
+                      @click="props.expand = !props.expand" />
+                  </q-td>
+                  <q-td v-for="col in props.cols.filter(c => c.name !== 'expand')" :key="col.name" :props="props">
+                    {{ col.value }}
+                  </q-td>
+                </q-tr>
+                <q-tr v-if="props.expand" :props="props">
+                  <q-td :colspan="props.cols.length" class="bg-grey-1">
+                    <div class="text-subtitle2 q-mb-sm">Dispositivos de {{ props.row.username }}</div>
+                    <q-table flat dense :rows="props.row.sessions" :columns="sessionColumns"
+                      row-key="id" :pagination="{ rowsPerPage: 0 }" hide-pagination>
+                      <template #body-cell-status="{ row }">
+                        <q-td>
+                          <q-badge :color="row.missing_polls ? 'orange' : collection?.status === 'ok' ? 'teal' : 'grey'"
+                            :label="row.missing_polls ? 'Confirmando salida' : collection?.status === 'ok' ? 'Activa' : 'Sin confirmar'" />
+                        </q-td>
+                      </template>
+                    </q-table>
+                  </q-td>
+                </q-tr>
+              </template>
+            </q-table>
+            <q-table
+              v-else
               flat
               :rows="rows"
               :columns="sessionColumns"
@@ -287,7 +334,7 @@ onUnmounted(() => clearInterval(timer))
               </template>
             </q-table>
             <q-card-section class="row items-center justify-between q-pt-sm">
-              <span class="text-caption text-grey-6">{{ total }} sesiones · Fuente: MikroTik</span>
+              <span class="text-caption text-grey-6">{{ total }} {{ view === 'active' ? 'usuarios' : 'sesiones' }} · Fuente: MikroTik</span>
               <q-pagination v-model="page" :max="lastPage" :max-pages="5" color="teal" @update:model-value="refresh" />
             </q-card-section>
           </q-card>

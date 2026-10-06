@@ -40,6 +40,7 @@ class HotspotController extends Controller
         $filters = $request->validate([
             'search' => 'nullable|string|max:100', 'page' => 'nullable|integer|min:1',
             'limit' => 'nullable|integer|min:1|max:100', 'router_id' => 'nullable|integer|min:1',
+            'group_by' => 'nullable|in:user',
         ]);
         $query = HotspotSession::query()->with('user:id,profile')->select([
             'id', 'router_id', 'hotspot_user_id', 'username', 'ip_address', 'mac_address',
@@ -56,6 +57,32 @@ class HotspotController extends Controller
             $term = '%'.addcslashes($filters['search'], '\\%_').'%';
             $query->where(fn ($q) => $q->where('username', 'like', $term)
                 ->orWhere('mac_address', 'like', $term)->orWhereRaw('CAST(ip_address AS TEXT) LIKE ?', [$term]));
+        }
+
+        if ($active && ($filters['group_by'] ?? null) === 'user') {
+            // Paginate users before loading devices so a user's sessions never split across pages.
+            $users = (clone $query)->without('user')->select('hotspot_user_id')
+                ->groupBy('hotspot_user_id')->orderBy('hotspot_user_id')
+                ->paginate($filters['limit'] ?? 25);
+            $devices = HotspotSession::with('user:id,profile')->whereNull('ended_at')
+                ->whereIn('hotspot_user_id', $users->getCollection()->pluck('hotspot_user_id'))
+                ->orderBy('started_at')->orderBy('id')->get()->groupBy('hotspot_user_id');
+            $users->setCollection($users->getCollection()->map(function ($user) use ($devices) {
+                $sessions = $devices->get($user->hotspot_user_id, collect());
+                $first = $sessions->first();
+
+                return [
+                    'id' => $user->hotspot_user_id,
+                    'username' => $first?->username,
+                    'profile' => $first?->user?->profile,
+                    'device_count' => $sessions->count(),
+                    'mikrotik_bytes_in' => $sessions->sum('mikrotik_bytes_in'),
+                    'mikrotik_bytes_out' => $sessions->sum('mikrotik_bytes_out'),
+                    'sessions' => $sessions->values(),
+                ];
+            }));
+
+            return $users;
         }
 
         return $query->orderByDesc('started_at')->orderByDesc('id')->paginate($filters['limit'] ?? 25);
