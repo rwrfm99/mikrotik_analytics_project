@@ -1,5 +1,27 @@
 # Validación de la base
 
+## Memoria de consultas ClickHouse
+
+El perfil `traffic_readonly` conserva el límite de 512 MiB por consulta y utiliza
+agregación externa desde 128 MiB, ordenación externa desde 64 MiB y dos hilos.
+Los datos temporales se escriben en el disco del servidor; los informes grandes
+pueden tardar más y siguen sujetos al límite de ejecución de 15 segundos.
+
+El archivo se monta mediante Compose en `users.d/traffic.xml`. ClickHouse recarga
+los perfiles automáticamente. Si el servicio no recoge el cambio, ejecutar
+`docker compose restart clickhouse` y repetir el informe que falló.
+
+Para comprobar el perfil, ejecutar con el usuario `traffic_reader`:
+
+```sql
+SELECT name, value FROM system.settings
+WHERE name IN ('max_memory_usage', 'max_bytes_before_external_group_by',
+               'max_bytes_before_external_sort', 'max_threads');
+```
+
+La configuración XML se validó localmente. No se pudo verificar la consulta real
+en este entorno porque el ejecutable de Docker no está disponible.
+
 Comprobaciones ejecutadas el 2 de octubre de 2026:
 
 - Frontend: `npm run build` completado con Vite; 65 módulos transformados.
